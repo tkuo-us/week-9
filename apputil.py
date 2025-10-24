@@ -30,4 +30,26 @@ class GroupEstimate(object):
         return self
 
     def predict(self, X):
-        return None
+        if not hasattr(self, "_group_stats") or not hasattr(self, "_columns"):
+            raise RuntimeError("Model is not fitted yet. Call fit(X, y) first.")
+
+        # normalize input to DataFrame with training columns
+        if isinstance(X, pd.DataFrame):
+            X_new = X[self._columns].copy()
+        else:
+            # allow single row like ["Brazil","Light"] or multiple rows
+            if isinstance(X, (list, tuple)) and X and not isinstance(X[0], (list, tuple, pd.Series, dict)):
+                X = [X]
+            X_new = pd.DataFrame(X, columns=self._columns)
+
+        # left-join with learned group stats
+        stats = self._group_stats.reset_index().rename(columns={"_target": "estimate"})
+        merged = X_new.merge(stats, how="left", on=self._columns)
+        preds = merged["estimate"]
+
+        # report missing combos
+        missing = int(preds.isna().sum())
+        if missing > 0:
+            print(f"[GroupEstimate.predict] {missing} observation(s) had unseen category combinations; returning NaN.")
+
+        return preds.to_numpy()
